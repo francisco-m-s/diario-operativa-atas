@@ -1,0 +1,41 @@
+# Infraestructura del demonio V4 (rutas, sheet, arranque). Las reglas de negocio están en reglas.yaml.
+atas_dir: '%APPDATA%\ATAS'            # carpeta estandar de ATAS; cambiala en config.local.yaml si la tuya es otra
+sqlite: atas_v4.sqlite
+backups_dir: backups
+backups_retener: 30            # copias diarias que se conservan
+# Copia de los logs de ATAS del 21 al 28/09/2026. La migración de 'Order trade' (una vez, al arrancar) lee de aquí
+# los que ATAS ya haya borrado (rota a ~6 días; el del 24/09 cae hacia el 30/09).
+logs_respaldo: backups\logs_atas_20260928
+# Semillas desde la V3 (spec §8.3, §9.5): el demonio solo lee este fichero, nunca lo escribe.
+semillas: semillas.yaml
+
+# V5 (11/11/2026): hoja nueva `Registro_bot_V5`. La antigua (`Registro_bot v3`, con la pestaña V4 y sus fotos) queda intacta:
+# el demonio ya no escribe en ella; solo se lee para la carga inicial del histórico unificado (cli_v4.py unificado).
+sheet_id: ID_DE_TU_HOJA_V5               # pon el tuyo en config.local.yaml
+pestana: V5
+sheet_id_antiguo: ''                    # opcional (carga inicial del historico unificado); en config.local.yaml
+pestana_decisiones_antiguas: Decisiones histórico      # decisiones anteriores a la V4 (analisis_historico)
+credencial: ''                          # ruta al .json de la cuenta de servicio, FUERA del repo: config.local.yaml o ATAS_SHEETS_CREDENCIAL
+
+# Primera sesión CME que entra en la V4 (spec §1). Nada anterior se ingiere.
+inicio_sesion: 2026-09-22
+
+intervalo_s: 2                 # ciclo del demonio (ingesta incremental de logs y cdb)
+preoperativa_timeout_s: 3      # lectura periódica de la celda de preoperativa: nunca bloquea el ciclo más de esto
+preoperativa_pausa_error_s: 30 # tras un fallo de esa lectura, no se reintenta hasta pasado este tiempo
+# Hilo de R17 (spec §13; reglas en reglas.yaml -> preoperativa.r17). Usa también las dos claves de arriba (timeout y pausa tras error).
+r17_intervalo_s: 5             # cada cuántos segundos mira los ficheros de velas; escribe en el sheet solo si el texto cambia
+r17_espera_sync_s: 10          # el sync espera como mucho esto a que acabe una escritura de R17 en curso; pasado el plazo sigue sin ella
+r17_plazo_s: 6                 # plazo de RELOJ DE PARED de la lectura + escritura de R17 (el timeout de arriba es por operación de socket y no frena una respuesta que gotea); siempre < r17_espera_sync_s
+mutex: Global\ATAS_DAEMON_V4
+
+# Cuentas ya quemadas antes de la V4 (INFORME_V3 §0 y lista de exclusión V3). Se siembran
+# una sola vez en la tabla SQLite cuentas_quemadas al crear la base.
+quemadas_iniciales: []                 # IDs de cuentas ya quemadas antes de la V4; los tuyos, en config.local.yaml
+
+# Hilos y red (11/11/2026). Toda petición a Sheets corre en un hilo auxiliar y el ciclo del cortafuegos sigue mientras se espera.
+sheets_plazo_s: 90             # plazo de RELOJ DE PARED de cada petición del sync; pasado, se abandona y se rehacen los clientes
+reloj_log_min_s: 0.1           # el log solo repite la línea [RELOJ] si el tramo cambia o su desfase se mueve al menos esto
+purga_avisos_dias: 7           # avisos_emitidos: se borran los que ya no corresponden a ningún evento y tienen más de N días
+
+turno_latido_s: 60             # cada cuánto anota el demonio que su turno sigue vivo (si se cuelga, el turno acaba ahí)

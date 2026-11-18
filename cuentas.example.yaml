@@ -1,0 +1,23 @@
+# PLANTILLA con cuentas FICTICIAS. Copia este fichero a `cuentas.yaml` (que está en .gitignore) y deja que el demonio lo mantenga.
+# El `cuentas.yaml` real lo gestiona el sistema (demonio y cli_v4.py): editarlo solo con el demonio parado.
+cuentas:
+  PA-APEX-00000-01:           # cuenta real (Apex PA)
+    firma: Apex
+    tipo: PA
+    tamano: 25000
+    sin_regla: false
+    alta: '2026-01-02'
+    retiros: 0
+    ancla_inicial: null       # balance de partida; null = se estima
+    ancla_estimada: true
+  APEX-00000-02:              # prueba (evaluación) de Apex
+    firma: Apex
+    tipo: evaluacion
+    tamano: 25000
+    sin_regla: false
+    alta: '2026-01-02'
+    retiros: 0
+    ancla_inicial: null
+    ancla_estimada: true
+sim_activas: []               # cuentas de simulación que sí se registran
+resets: {}                    # {cuenta física: [{desde: 'AAAA-MM-DD HH:MM:SS.mmm', nombre: '<ID>-reset1'}]}

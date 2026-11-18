@@ -1,0 +1,27 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read              # el flujo no necesita escribir nada ni usa secretos: los tests son sintéticos (hoja falsa)
+
+jobs:
+  tests:
+    runs-on: windows-latest   # el código usa winsound y la API de Windows (mutex de instancia única)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Generador de datos de prueba (opcional: sin él se saltan los tests de integración)
+        continue-on-error: true
+        run: pip install "generador-logs-pruebas @ git+https://github.com/francisco-m-s/generador-logs-pruebas"
+      - name: Escáner de secretos
+        run: python herramientas/comprobar_secretos.py
+      - name: Tests
+        run: python -m pytest tests -q

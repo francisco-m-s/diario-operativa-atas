@@ -1,0 +1,6 @@
+# Semillas de EJEMPLO (cuentas y fechas ficticias): días +50 y +100 anteriores al inicio del registro (spec §8.3, §9.5).
+# El demonio solo lee este fichero y cambiarlo exige reiniciarlo. Pon aquí las tuyas.
+cuentas:
+  PA-APEX-00000-01:
+    ultimos_dias_50: ['2026-01-05', '2026-01-12']
+    dias_100_previos: 1

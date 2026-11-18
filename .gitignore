@@ -1,0 +1,55 @@
+# Lista blanca: TODO se ignora salvo lo que se nombra aquí. Un `git add -A` descuidado no puede subir datos reales,
+# la base de datos, los logs, las copias ni las credenciales.
+/*
+
+# --- código, tests, reglas y documentación (lo único que viaja al repositorio) ---
+!/.gitignore
+!/.gitattributes
+!/LICENSE
+!/.githooks/
+!/.github/
+!/README.md
+!/SPEC_V4.md
+!/INFORME_V4.md
+!/INFORME_SESGOS_PARA_AGENTE_ESTRATEGIAS.md
+!/requirements.txt
+!/config.yaml
+!/reglas.yaml
+!/semillas.yaml
+!/cuentas.example.yaml
+!/cli_v4.py
+!/demonio_v4.py
+!/INICIAR_DEMONIO_ATAS_V4.bat
+!/INICIAR_DEMONIO_ATAS_V5.bat
+!/atasv4/
+!/tests/
+!/herramientas/
+
+# --- lo que NUNCA debe subir, ni siquiera dentro de lo permitido ---
+# Credenciales y secretos de cualquier tipo (la cuenta de servicio de Google es un .json; este proyecto no versiona ninguno)
+*.json
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+*credencial*
+*credential*
+*service*account*
+# Configuración local con rutas, IDs de hoja y la ruta de la credencial (plantilla pública: config.yaml)
+config.local.yaml
+# Estado del sistema y datos reales
+cuentas.yaml
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.log
+backups/
+# Cachés
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Los logs de ATAS recortados de tests\fixtures son datos de prueba y sí se versionan
+!/tests/fixtures/**

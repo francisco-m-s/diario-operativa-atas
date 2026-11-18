@@ -1,0 +1,14 @@
+# Texto normalizado a LF en el repositorio.
+* text=auto
+*.py text eol=lf
+*.md text eol=lf
+*.yaml text eol=lf
+*.txt text eol=lf
+.githooks/* text eol=lf
+
+# Los .bat de Windows, siempre CRLF (el original mezclaba finales de línea).
+*.bat text eol=crlf
+
+# Los fixtures de tests son logs y .cdb reales recortados. El código lee los logs en BINARIO y guarda offsets en bytes
+# (atasv4/fuentes.py), así que ni se normalizan los finales de línea ni se tocan de ninguna otra forma.
+tests/fixtures/** -text

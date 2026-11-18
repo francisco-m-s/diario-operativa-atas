@@ -1,0 +1,513 @@
+# Reglas de negocio de la V4 (SPEC_V4.md). El código no contiene ninguno de estos valores.
+# Cambiar una regla = editar aquí y reiniciar el demonio (o `cli_v4.py sync`).
+
+# --- Tabla de símbolos (spec §2). Raíz del símbolo ATAS: MNQZ6@CME -> MNQ ---
+simbolos:
+  NQ:  {tick: &tick_nq 0.25,  valor_tick: 5.00}
+  MNQ: {tick: 0.25,  valor_tick: 0.50}
+  ES:  {tick: 0.25,  valor_tick: 12.50}
+  MES: {tick: 0.25,  valor_tick: 1.25}
+  CL:  {tick: 0.01,  valor_tick: 10.00}
+  SI:  {tick: 0.005, valor_tick: 25.00}
+
+# --- Comisiones USD por contrato y por lado (spec §2). Primera regla que casa (firma + raíz) gana. ---
+# estado: VERIFICADO = cuadra con balances reales (INFORME_V3 §1.8); NO_VERIFICADO = sin dato oficial fiable.
+comisiones:
+  - {firma: Apex,    simbolo: MNQ, por_lado: 0.51, estado: VERIFICADO}
+  - {firma: Apex,    simbolo: NQ,  por_lado: 1.99, estado: VERIFICADO}
+  # Rithmic, tabla de comisiones para E2T (help.earn2trade.com/en/articles/2425493): 'Total Per Side' 2,04 $. Cuadra con los
+  # balances del 22/09 (8,16 $ en 4 lados). Era 2,02 hasta el 07/10/2026 (decisión del operador).
+  - {firma: E2T,     simbolo: NQ,  por_lado: 2.04, estado: VERIFICADO}
+  # R|Trader Pro de la cuenta REAL de E2T, columna 'Commission Fill Rate' (captura del operador, 04/11/2026): ES y NQ 2,04;
+  # MES y MNQ 0,93. Antes MNQ 1,08 (máximo del rango 0,82–1,08 de la ayuda de E2T, sin verificar).
+  - {firma: E2T,     simbolo: MNQ, por_lado: 0.93, estado: VERIFICADO}
+  - {firma: E2T,     simbolo: ES,  por_lado: 2.04, estado: VERIFICADO}
+  - {firma: E2T,     simbolo: MES, por_lado: 0.93, estado: VERIFICADO}
+  # Bulenox no publica tabla por instrumento (bulenox.com). Se asumen las de Apex hasta que el operador cuadre con Rithmic.
+  - {firma: Bulenox, simbolo: MNQ, por_lado: 0.51, estado: NO_VERIFICADO}
+  - {firma: Bulenox, simbolo: NQ,  por_lado: 1.99, estado: NO_VERIFICADO}
+  - {firma: SIM,     simbolo: '*', por_lado: 0.00, estado: NO_VERIFICADO}
+
+# --- Inferencia de cuenta nueva por nombre (spec §3). Primer patrón que casa gana. ---
+# tamano: null = se infiere del primer balance real (el nombre de Apex/Bulenox no lo lleva).
+patrones_cuenta:
+  - {regex: '_sim$',          firma: SIM,     tipo: sim,        tamano: 25000}
+  - {regex: '^DEMO',          firma: SIM,     tipo: sim,        tamano: 25000}   # demos de ATAS (24/09/2026)
+  - {regex: '^CRYPTO',        firma: SIM,     tipo: sim,        tamano: 25000}
+  - {regex: '^PA-APEX',       firma: Apex,    tipo: PA,         tamano: null}
+  - {regex: '^APEX-',         firma: Apex,    tipo: evaluacion, tamano: null}
+  - {regex: '^fsern.*tcp25',  firma: E2T,     tipo: TCP,        tamano: 25000}
+  # E2T real (spec §10.1, 07/10/2026). Patrón PROVISIONAL: la última real fue 'livesimT_franeznaco50e'; el operador lo
+  # confirma cuando exista una. tamano null: se infiere del primer balance real (hoy firmas.E2T solo tiene 25000).
+  - {regex: '^livesim',       firma: E2T,     tipo: real,       tamano: null}
+  # E2T real CONFIRMADA (04/11/2026): usuario Rithmic fsern2776f (Rithmic Paper Trading, Chicago), cuenta 'fsern2776fb7ad1',
+  # balance inicial 25.000. No casa con '^fsern.*tcp25' (eval) ni con '^livesim'.
+  - {regex: '^fsern2776f[0-9a-f]+$', firma: E2T,  tipo: real,       tamano: null}
+  - {regex: '^BX',            firma: Bulenox, tipo: evaluacion, tamano: null}
+patrones_sim: ['_sim$', '^DEMO', '^CRYPTO']
+
+# ID corto de cuenta para el ID de operación <corta>-<YYYYMMDD>-<nnn>. {1} = primer grupo del regex.
+# Sin patrón, los 6 últimos caracteres alfanuméricos: en un reset (…-reset1) saldría RESET1 en todas las cuentas y los ID de
+# operación chocarían, por eso `cli_v4.py reset` exige un patrón (spec §14.3). Los reset de Apex PA, evaluación, E2T TCP y Bulenox
+# (`APEX-91120-74-reset1` -> AP74R1) llevan el suyo; el sufijo es `reset.sufijo`.
+cuenta_corta:
+  - {regex: '^PA-APEX-\d+-(\d+)$',                plantilla: 'PA{1}'}
+  - {regex: '^APEX-\d+-(\d+)$',                   plantilla: 'AP{1}'}
+  - {regex: '^fsern\w*?(\d{3})$',                 plantilla: 'E2T{1}'}
+  - {regex: '^BX\d+-(\d+)$',                      plantilla: 'BX{1}'}
+  - {regex: '^(\w+)_sim$',                        plantilla: 'SIM'}
+  - {regex: '^PA-APEX-\d+-(\d+)-reset(\d+)$',     plantilla: 'PA{1}R{2}'}
+  - {regex: '^APEX-\d+-(\d+)-reset(\d+)$',        plantilla: 'AP{1}R{2}'}
+  - {regex: '^fsern\w*?(\d{3})-reset(\d+)$',      plantilla: 'E2T{1}R{2}'}
+  - {regex: '^BX\d+-(\d+)-reset(\d+)$',           plantilla: 'BX{1}R{2}'}
+
+# Reset de una cuenta (spec §14, 03/11/2026): Apex resetea una evaluación conservando el ID de Rithmic. El reset crea una cuenta
+# lógica `<ID físico><sufijo>` (N = 1, 2, … por cada reset de la misma cuenta física). Los cortes se registran en cuentas.yaml.
+reset:
+  sufijo: '-reset{n}'
+
+# --- Threshold por firma y tamaño (spec §6) ---
+firmas:
+  Apex:
+    25000: {drawdown: 1000, tope: 25100}
+    50000: {drawdown: 2000, tope: 50100}
+  E2T:
+    25000: {drawdown: 1500, tope: 25100}
+  Bulenox: {como: Apex}
+  SIM:     {como: E2T}
+
+# --- Copy-trading (spec §4.1). Medido el 22/09 sobre datos reales: PA-16 -> PA-15 21/09
+# desfase 0,149–0,318 s (ms del log); en MyTrade.cdb (resolución 1 s) 37 copias a 0 s y 4 a 1 s.
+copia:
+  ventana_s: 1.0
+
+# --- Cortafuegos (spec §4.5). Etiquetas en MAYÚSCULAS; las que aparecen en Observaciones demonio ponen
+# la celda en rojo. Las infracciones de entrada usan los textos de `observaciones` (sin_sl, sl_cancelado,
+# contratos_excedidos). La pérdida usa el criterio de racha (racha.perdedora_max).
+cortafuegos:
+  sin_sl_s: 5                    # SIN SL: a los 5 s del fill de entrada no hay SL dado de alta
+  perdida:
+    espera_s: 612                # 3 velas de 204 s desde el cierre
+    prueba_ticks: -20            # §10.4 (desde plan4.desde): decisión de una prueba (sin cuenta real) perdedora = Resultado (ticks) <= N por contrato
+                                 # (si la mide una real, su neto <= racha.perdedora_max)
+    preventivo: 'PÉRDIDA: NO OPERAR HASTA {hora}'
+    infraccion: &reentrada 'REENTRADA TRAS PÉRDIDA'
+  seguidas:                      # §10.4 (decisiones abiertas desde plan4.desde): racha global de pérdidas por decisión (orden de cierre, dentro de la sesión CME)
+    ganadora_ticks: 10           # ganadora (rompe la racha) = Resultado (ticks) de la cuenta que mide >= N
+    minimo: 2                    # con la racha >= N tras una perdedora: preventivo
+    espera_s: 3600               # NO OPERAR HASTA = cierre + N s
+    preventivo: '{n} PÉRDIDAS SEGUIDAS: NO OPERAR HASTA {hora}'
+    infraccion: &reentrada_seguidas 'REENTRADA TRAS PÉRDIDAS SEGUIDAS'
+  ventanas:                      # móviles, por hora de apertura; N aperturas -> la N+1ª antes de tiempo es infracción
+    - {minutos: 10, aperturas: 2, preventivo: '2 DECISIONES EN 10 MIN: NO OPERAR HASTA {hora}', infraccion: &sobreoperacion_10 'SOBREOPERACIÓN 10 MIN'}
+    - {minutos: 60, aperturas: 4, preventivo: '4 DECISIONES EN 1 H: NO OPERAR HASTA {hora}', infraccion: &sobreoperacion_1h 'SOBREOPERACIÓN 1 H'}
+  aviso:                         # SIN sonido ni notificación de Windows desde el 11/11/2026 (orden del operador): el evento solo queda en el log y en el sheet
+    titulo: CORTAFUEGOS ATAS
+    sonido:                      # vacío = sin sonido. Para volver a oírlo: SystemExclamation
+    notificacion: false          # false = sin notificación (toast) de Windows
+    duracion_s: 8                # (solo con sonido) se repite hasta cubrir estos segundos (un pitido suelto se ignora)
+    repetir_cada_s: 1.2          # separación entre repeticiones
+    infraccion_prefijo: 'INFRACCIÓN: '
+    max_antiguedad_s: 300        # eventos más viejos (arranque, reingesta) se registran sin avisar
+
+# --- Operación sin todos sus fills (falta alguno en MyTrade.cdb y en el log) ---
+# Si ATAS da la posición por plana ('Position changed … vol 0') y los fills no cuadran, la operación
+# se cierra con la salida de HistoryMyTrade o, si tampoco está, se escribe marcada como incompleta.
+incompleta:
+  espera_min: 5          # sin fills posteriores: minutos con la cuenta plana según el log antes de escribirla
+  tolerancia_s: 5        # desfase entre la hora del log y la del exchange
+  giro_transitorio_s: 1  # 'vol 0' seguido en ≤ N s de un volumen de signo contrario = giro, no cuenta plana (28/09/2026)
+
+# --- Reloj ATAS (28/09/2026; tramos, 29/09/2026). La hora buena es la del exchange (ATAS/Rithmic), nunca la del PC. ---
+# desfase = hora del log − hora del exchange, uno por TRAMO del reloj del PC (empieza en cada 'Started v…' y en cada
+# salto delatado por 'Latency manager'). Muestras exactas: 'Processing trade' y 'Latency manager' de Rithmic; si el
+# tramo no tiene, MyTrade.cdb. Spec §1 y atasv4/reloj.py.
+reloj:
+  resolucion_mytrade_s: 1        # MyTrade.cdb trunca la hora al segundo: se toma el centro (−0,5 s)
+  desfase_max_s: 60              # |log − exchange| mayor = línea repetida al reconectar, no la del fill: no es muestra
+  desfase_por_defecto_s: 0       # tramo sin muestras y sin tramo del mismo día (sin salto de por medio) del que heredar
+  salto_min_s: 1                 # 'Latency manager … delay' con |delay| >= N s: w32time movió el reloj del PC = corte de tramo
+  salto_agrupar_s: 2             # líneas del mismo salto (una por conexión) separadas <= N s = un solo corte
+  margen_salto_s: 1              # tras un salto, segundos de más en que las horas crudas pueden desordenarse (la línea 'Latency manager' llega con el primer dato de mercado)
+  fuente_latencia: '^Rithmic'    # conexiones cuyas 'Latency manager' cortan y miden. Binance no: su hora deriva por su cuenta (23/09 18:10:43: delay −1,28 s sin salto)
+
+# --- Plan 4 (spec §10; decisión del operador, 07/10/2026): las reglas nuevas rigen SOLO desde la sesión CME `desde` ---
+# La fecha decide por la sesión CME de la APERTURA de cada decisión u operación: contratos de las reales (§10.1) y de la tabla
+# general (§10.2), contratos y tope del SL por la distancia al threshold (§10.3), pérdida con la cuenta que mide, pausa de 612 s
+# y pérdidas seguidas (§10.4), COMPUERTA SIN SÍ (§10.6) y el bono de sesión (§10.2, por la sesión que empieza). Lo anterior
+# conserva exactamente lo que daban las reglas de antes (las tablas de `antes`). No dependen de la fecha: ESPEJO (§10.5, de
+# análisis, también hacia atrás), la columna BAL `Contratos permitidos` y el rojo del margen (estado actual), y la comisión de E2T.
+plan4:
+  desde: 2026-10-08
+  antes:                         # lo que regía hasta la sesión anterior a `desde`
+    margen_contratos:            # §5: tabla general (sim y símbolos sin tabla propia)
+      - {min: 750, contratos: 3}
+      - {min: 500, contratos: 2}
+      - {min: 141, contratos: 1}
+    apex_pa_contratos:           # §8.2: Apex PA por raíz de símbolo
+      NQ:
+        - {min: 141, contratos: 1}
+      MNQ:
+        - {min: 750, contratos: 3}
+        - {min: 500, contratos: 2}
+        - {min: 141, contratos: 1}
+    margen_levantado_menor_que: 141   # §8.4: margen levantado con el margen < 141
+
+# --- Margen de operativa (spec §5) ---
+margen:
+  inicial: 500
+  factor_resultado: 0.2
+  bono_sesion: 140               # regla de §5, solo para las sesiones anteriores a plan4.desde
+  bono:                          # §10.2: al empezar cada sesión hábil (desde plan4.desde), según la sesión hábil anterior de la cuenta
+    sin_operaciones: 140         # la sesión hábil anterior sin operaciones
+    neto_ticks: 20               # con operaciones y neto del día >= N t de NQ (100 $): con_neto; si menos: sin_neto
+    con_neto: 70
+    sin_neto: 0
+  contratos:                     # desde plan4.desde: primer umbral que se cumple, margen >= min o margen > mayor_que (§10.2: 141 ya no da contrato)
+    - {min: 750, contratos: 3}
+    - {min: 500, contratos: 2}
+    - {mayor_que: 141, contratos: 1}
+  contratos_por_defecto: 0
+
+# --- Ratio B/R (spec §4.2) ---
+ratio:
+  tp_implicito_ticks: 136
+
+# --- Racha y días (spec §4.2, §7.1), en $ netos ---
+racha:
+  ganadora_min: 50
+  perdedora_max: -10
+dia:
+  ganada_min: 50                 # Nº ganadas (día)
+  dia_valido_ticks: 10           # día +50 (spec §7.1 'Últimos 2 días +50 $' y §8.3): neto del día >= 10 t de NQ (50,00 $), sin colchón
+balance:
+  descuadre_max: 1.0
+
+# --- Unidad de los umbrales en ticks (spec §8, §9; 30/09/2026): ticks de NQ = importe neto en $ ÷ valor del tick
+# de este símbolo en `simbolos`. Balances, nivel del threshold y Resultado ($) siguen en $.
+unidad_ticks: NQ
+
+# --- Cuentas reales y pruebas (spec §8.1, §9.1; decisión del operador, 30/09/2026) ---
+# Real = firma y tipo de esta lista (las Apex PA y, desde el 07/10/2026 -spec §10.1-, la E2T real, cuyo patrón de nombre está
+# en patrones_cuenta). Prueba = ni sim (patrones_sim) ni real: evaluaciones.
+# Las sim siguen §5 (ni §8 ni §9). Solo suena/notifica una decisión con alguna cuenta real (spec §4.5).
+cuentas_reales:
+  - {firma: Apex, tipo: PA}
+  - {firma: E2T, tipo: real}
+
+# --- Cuentas reales (Apex PA): contratos, inactividad y margen levantado (spec §8) ---
+apex_pa:
+  contratos:                     # desde plan4.desde, por raíz de símbolo; primer umbral que se cumple (margen >= min o > mayor_que). Sustituye a
+    NQ:                          # margen.contratos en las reales; un símbolo sin tabla aquí sigue margen.contratos.
+      - {min: -.inf, contratos: 0}   # §10.1: las reales se operan solo en MNQ, NQ 0 siempre
+    MNQ:                         # el orden de los símbolos es el de la columna BAL 'Contratos permitidos'
+      - {min: 750, contratos: 3}
+      - {min: 500, contratos: 2}
+      - {mayor_que: 141, contratos: 1}   # §10.1: <= 141 -> 0
+  margen_levantado:              # §8.4 / §10.1 (desde plan4.desde; antes, margen < plan4.antes.margen_levantado_menor_que): contador de inactividad >= contador_min y margen <= margen_max
+    contador_min: 20
+    margen_max: 141
+    bono: 140                    # §10.2: tras un día +50 con el margen levantado ("suma lo máximo"), la sesión siguiente recibe +N
+    contratos: {NQ: 0, MNQ: 1}   # permitidos con el margen levantado (§8.2)
+    parada: '+50 DEL DÍA ALCANZADO: NO OPERAR MÁS HOY'   # plana con el día >= dia.dia_valido_ticks: vuelve el bloqueo
+  inactividad:                   # §8.3: días naturales desde el más antiguo de los dos últimos días +50
+    dormant_desde: 15            # estado DORMANT con el contador >= N (MARGEN LEVANTADO: ver margen_levantado)
+    limite_dias: 30              # Límite = ese día + N
+    ventana_dias: 30             # 'Días +50 (30 d)': días +50 en los últimos N días naturales, contando la sesión actual
+    estados: {ok: OK, dormant: DORMANT, levantado: MARGEN LEVANTADO}
+    formato: 'día {n} · límite {limite} · {estado}'
+  dias_100_ticks:                # 'Días +100': neto del día >= N t, por tamaño (desde el último retiro o el alta)
+    25000: 20
+    50000: 40
+    100000: 50
+    150000: 60
+
+# --- Inactividad propia de una firma en sus cuentas reales (spec §10.1, 11/11/2026). E2T cierra la financiada tras 5 días de
+# trading seguidos sin operar y sin avisar (NORMAS_E2T.md §2, [S21]). Sustituye SOLO al texto de la columna `Inactividad Apex`
+# del BAL de esas cuentas; el resto de §8 (margen levantado, días +50) sigue igual. Cuenta cualquier operación, gane o pierda.
+inactividad_firma:
+  E2T:
+    limite_dias: 5               # días hábiles (L–V; los festivos CME cuentan como hábiles, a favor de la prudencia) seguidos sin operar
+    aviso_desde: 3               # estado AVISO con el contador >= N
+    estados: {ok: OK, aviso: AVISO, ultimo: ÚLTIMO DÍA, vencido: VENCIDO}
+    formato: 'día {n} de {max} sin operar · operar como tarde el {limite} · {estado}'
+
+# --- Ciclos de operaciones (spec §15, 11/11/2026): la pestaña V4 solo muestra el ciclo en curso; al archivar, se copia a otra ---
+ciclos:
+  pestana: 'V5 {desde} a {hasta}'    # nombre de la pestaña archivada: día (Madrid) de la primera y de la última decisión del ciclo
+  formato_fecha: '%Y-%m-%d'
+
+# --- Pruebas (evaluaciones) (spec §9): el margen informa pero no sanciona; sin §8 ---
+pruebas:
+  contratos:                     # §9.3: máximo en NQ-equivalentes de la posición abierta de la cuenta (todos sus símbolos)
+    max_nq_eq: 2
+    peso: {NQ: 1, MNQ: 0.1}      # 10 MNQ = 1 NQ. Un símbolo sin peso no suma. Orden = columna BAL 'Contratos permitidos'
+    detalle: '{neq} NQ-eq con {max} permitidos'
+    por_distancia:               # §10.3, desde plan4.desde: en las pruebas de estos tamaños, sustituye al máximo de NQ-equivalentes
+      tamanos: [25000]
+      distancia_min_ticks: 75    # distancia al threshold en la apertura (ticks de NQ): >= -> 'lejos'; < -> 'cerca'
+      max_total: 1               # contratos de la posición abierta de la cuenta, sumando los símbolos de la tabla
+      lejos: {NQ: 1, MNQ: 1}     # máximo por símbolo (el orden es el de la columna BAL 'Contratos permitidos')
+      cerca: {NQ: 0, MNQ: 1}
+      detalle: '{posicion} con distancia {distancia} t'
+      sin_dato: 'sin dato'       # distancia desconocida: se trata como 'lejos'
+  objetivo:                      # §9.5: balance objetivo ($) por firma y tamaño. Sin objetivo -> columna Prueba 'SIN REGLA'
+    Apex: {25000: 26500, 50000: 53000}
+    E2T: {25000: 26750}
+  consistencia: {E2T: 0.3}       # objetivo efectivo = máx(objetivo, balance inicial + mejor día ÷ fracción)
+  threshold_tope_objetivo: [Apex]   # §6: en estas firmas el tope del threshold de la prueba es su balance objetivo
+  objetivo_alcanzado:            # plana con el balance >= objetivo (efectivo)
+    preventivo: 'OBJETIVO ALCANZADO: NO OPERAR MÁS'
+    infraccion: &tras_objetivo 'OPERACIÓN TRAS OBJETIVO'
+    detalle: 'objetivo alcanzado a las {hora}'
+  maximo_diario:                 # §9.6: máximo BAL del día = balance al empezar la sesión + N t (plana por encima: aviso)
+    ticks: {E2T: 105}
+    etiqueta: 'MÁXIMO BAL DE HOY: {nivel} · REDUCIR BAL PARA CUMPLIR LA REGLA DEL 30 %'
+  perdida_diaria:                # §9.7: plana con el neto del día <= N t
+    ticks: -75
+    preventivo: 'PÉRDIDA DIARIA {ticks} T: NO OPERAR MÁS HOY'
+    infraccion: &tras_perdida_diaria 'OPERACIÓN TRAS PÉRDIDA DIARIA'
+    detalle: 'pérdida diaria a las {hora}'
+  tope_sl:                       # §9.10: tope del SL por el Loss Limit de Rithmic (el stop real hasta el BE)
+    limite_usd: 375              # tope (ticks por contrato) = limite_usd ÷ (contratos de la fila × valor del tick): 1 NQ 75 t, 2 NQ 37,5 t, 1 MNQ 750 t
+    desde: 2026-10-07            # solo operaciones con sesión CME >= esta fecha; las anteriores conservan su SL real
+    prefijo_nota: 'SL BE'        # nota de SL en Observaciones demonio: 'SL BE +1→+12→+30' (beneficio asegurado, sin hora)
+    beneficio_min_ticks: 1       # la nota empieza en el primer SL que asegura al menos estos ticks de beneficio
+    separador_nota: '→'
+  vista:                         # §9.8: columna 'Prueba' del BAL
+    objetivo: 'objetivo {objetivo} · faltan {faltan} t'
+    consistencia: 'objetivo {objetivo} · faltan {faltan} t · mejor día {mejor} t (máx {maximo})'
+    alcanzado: 'OBJETIVO ALCANZADO'
+    sin_regla: 'SIN REGLA'
+    decimales_ticks: 1
+
+# --- Columnas del BAL (spec §7.1, cambios del 30/09/2026) ---
+vista_bal:
+  permitidos: '{n} {simbolo}'    # 'Contratos permitidos' por símbolo en reales y pruebas: '1 NQ / 3 MNQ', '2 NQ / 20 MNQ'
+  permitidos_separador: ' / '
+
+# --- Observaciones demonio (spec §4.4) ---
+observaciones:
+  separador: ' · '
+  sin_telemetria: '[SIN TELEMETRÍA]'
+  sin_sl: &sin_sl 'SIN SL'
+  sl_cancelado: &sl_cancelado 'SL CANCELADO CON POSICIÓN ABIERTA'
+  sl_reemplazo_s: 5              # un SL cancelado y repuesto en <= 5 s es una modificación, no una cancelación
+  contratos_excedidos: &contratos_excedidos 'CONTRATOS > PERMITIDOS'
+  simbolo_desconocido: 'SÍMBOLO SIN REGLA'
+  incompleta: 'OPERACIÓN INCOMPLETA: faltan contratos de salida'
+  salida_rescatada: 'SALIDA TOMADA DE HistoryMyTrade (fill ausente)'
+  comision_sin_regla: 'COMISIÓN SIN REGLA'
+  mae_manual: 'MAE manual'
+  mfe_manual: 'MFE manual'
+  estrategia_tardia: &estrategia_tardia 'ESTRATEGIA ELEGIDA CON LA OPERACIÓN ABIERTA'   # de análisis: no pone rojo (spec §7.2)
+  log_sin_dato: 'sin dato'
+  duracion:                      # primer corte que casa: duracion < menor_que
+    - {menor_que: 10,  etiqueta: MICRO-RUIDO}
+    - {menor_que: 60,  etiqueta: CORTA}
+    - {menor_que: 301, etiqueta: CORRECTA}
+  larga:
+    etiqueta: LARGA
+    aguantando_perdida: {etiqueta: &aguantando_perdida AGUANTANDO PÉRDIDA, mae_pct_sl: 0.5}     # |MAE| > 50 % del SL
+    dejando_correr:     {etiqueta: DEJANDO CORRER,     mfe_pct_tp: 0.8}     # MFE >= 80 % del TP ("cerca del TP")
+    sin_gestion: SIN GESTIÓN
+  bal:
+    sin_regla: SIN REGLA
+    ancla_estimada: ANCLA ESTIMADA
+    descuadre: DESCUADRE BALANCE
+    sin_balance: SIN BALANCE BASE
+    sync: 'Última sync'
+
+# --- Formato condicional (spec §4.3, §7.1) ---
+colores:
+  positivo: '#b7e1cd'
+  negativo: '#f4c7c3'
+  duracion_roja_mayor_que: 300
+  margen_rojo_hasta: 141         # §10.2: margen <= 141
+  rojo: '#ea9999'
+  manual: '#ffe599'              # celda MAE/MFE corregida a mano
+  preoperativa: '#fff2cc'        # celdas de control de la preoperativa
+
+estrategia_por_defecto: &estrategia_por_defecto Sin estrategia
+
+# --- Etiqueta ESPEJO (spec §10.5): de análisis; no pone rojo, no suena y no cambia la Calificación ---
+espejo:
+  etiqueta: ESPEJO
+  palabra: espejo                # columna Observaciones del operador: 'espejo' la pone y 'no espejo' la quita (manda lo manual)
+  negacion: no espejo
+  disparo_ticks:                 # ticks por contrato: el flotante de la operación llega a <= N
+    real: -80
+    prueba: {25000: -40, 50000: -80}   # por tamaño de la prueba (Apex o E2T)
+  tp_min_ticks: 0                # TP dado de alta o modificado, después del disparo, a >= N t de beneficio (0 = precio de entrada o mejor)
+
+# --- Preoperativa (spec §7.2): pasos antes de entrar, filas justo encima del encabezado de operaciones ---
+preoperativa:
+  lectura_s: 5                   # el demonio lee la celda de estrategia cada N s (momento de elección)
+  tolerancia_tardia_s: 2         # tardía solo si se eligió más de N s después de la apertura (apertura truncada al segundo; momento de elección pasado a hora del exchange con el reloj ATAS)
+  estrategia:
+    etiqueta: Estrategia a usar  # texto de la columna A
+    columna: Estrategia          # el desplegable va encima de esta columna de operaciones
+  mercado:                       # estado del mercado (spec §12): fila encima de 'Estrategia a usar'; no es de la compuerta ni de los objetivos
+    etiqueta: Estado del mercado # texto de la columna A
+    defecto: &mercado_defecto '-'  # valor al empezar cada sesión CME (como las filas de la compuerta) y sin lectura
+    valores: [Balance, Imbalance, *mercado_defecto]   # desplegable estricto
+  compuerta:                     # paso 2 (spec §10.6; la etiqueta, desde plan4.desde): una fila SÍ/NO por texto, justo debajo de 'Estrategia a usar', en la
+    mostrar: false               # V5 (spec §16.3): las filas SÍ/NO ya no se escriben ni se leen; los textos siguen aquí porque la etiqueta de las decisiones de la V4 se calcula con ellos
+    filas:                       # misma columna de Estrategia. El demonio las vacía al empezar cada sesión CME.
+      - 'Sueño ≥ 6 h (reloj)'
+      - 'Ni enfermo ni con conflicto personal abierto'
+      - 'Plan leído hoy'
+      - 'Ayer sin infracción'
+    afirmativo: 'SÍ'            # valores del desplegable (nada más que SÍ cuenta como afirmativo)
+    negativo: 'NO'
+    etiqueta: &compuerta_sin_si 'COMPUERTA SIN SÍ' # de análisis (sin rojo, sin sonido, no es proceso incorrecto): en la apertura de la decisión alguna no está en SÍ
+  r17:                           # R17 y stop calibrado en la celda de la derecha de la de 'Estrategia a usar' (spec §13). INFORMATIVO: no es una regla del Plan 4
+    activo: true                 # false = el demonio no arranca el hilo de R17 ni escribe la celda
+    carpeta: D:\proyectos\conceptos\atas\velas\NQ_204s   # M204s que escribe el indicador de ATAS: YYYY-MM-DD.jsonl (fecha UTC de la apertura); solo se lee
+    marco_s: 204                 # duración de la vela; la rejilla de una vela son las aperturas a un múltiplo exacto de esto
+    velas: 5                     # ventana: las N últimas velas cerradas, contiguas (separadas exactamente marco_s)
+    tick: *tick_nq               # R17 en ticks enteros: (máx de H − mín de L) / tick
+    stop: {coef: 1.53, exponente: 0.77}   # stop = coef × R17^exponente, al tick entero (DISENO_stops_volatilidad.md §3)
+    antiguedad_max_s: 438        # 2 × 204 + 30: con la última vela cerrada más antigua que esto, 'sin datos'
+    texto: 'R17 {r17} t · stop {stop} t · {hora}'    # hora = Madrid, cierre de la última vela usada (apertura + marco_s)
+    sin_datos_desde: 'R17 sin datos desde {hora}'    # hora = Madrid, cierre de la última vela que completó una ventana válida
+    sin_datos: 'R17 sin datos'                       # no hay ninguna ventana válida conocida
+    prefijo: 'R17'               # con qué empieza todo texto de R17: solo se escribe sobre una celda vacía o que empiece así, y el sync solo conserva un texto que empiece así
+
+# Tipo de orden ATAS -> columna Tipo apertura (spec §4.2)
+tipos_orden:
+  Market: Mercado
+  Limit: Límite
+  Stop: Stop
+  StopLimit: Stop
+
+# Tipo cierre, según la orden del fill de máxima amplitud (spec §4.2, decisión del operador 22/09/2026)
+tipos_cierre:
+  sl: SL                         # orden etiquetada SL, o cualquier orden Stop (SL movido a BE/beneficio incluido)
+  tp: TP                         # orden etiquetada TP
+  tipos_stop: [Stop, StopLimit]
+  por_tipo:                      # sin etiqueta
+    Limit: Límite
+    Market: Mercado
+
+# --- Calificación (spec §4.2, decisión del operador 01/10/2026): proceso × resultado, para el análisis posterior.
+# Va en todas las operaciones de SQLite (líder y seguidoras); el sheet muestra la de la líder (columna 'Calificación').
+# Los textos son alias (*) de los de arriba: cada texto vive en un solo sitio.
+calificacion:
+  proceso_incorrecto:            # basta una; todo lo demás (preventivas, otras etiquetas de duración, de análisis) no cuenta
+    infracciones: [*sin_sl, *sl_cancelado, *contratos_excedidos, *reentrada, *reentrada_seguidas, *sobreoperacion_10,
+                   *sobreoperacion_1h, *tras_objetivo, *tras_perdida_diaria]
+    estrategias: [*estrategia_por_defecto]   # estrategia final (la del sheet si el operador la editó), sin distinguir mayúsculas
+    etiquetas: [*estrategia_tardia]          # otras etiquetas de la operación que cuentan
+    larga: [*aguantando_perdida]             # causas de LARGA (observaciones.larga) que cuentan: 'LARGA AGUANTANDO PÉRDIDA'
+  resultado:                     # Resultado (ticks), por contrato
+    ganador_min: 10              # ganador: >= +10 t
+    perdedor_max: -10            # perdedor: <= −10 t; entre medias (estricto), neutro
+  cuadrantes:
+    correcto: {ganador: Trade Perfecto, perdedor: Buen Trade}
+    incorrecto: {ganador: Trade Peligroso, perdedor: Trade Basura}
+    neutro: Neutro               # resultado neutro, con cualquier proceso
+
+# --- Recuento semanal de los objetivos de proceso (spec §11; decisión del operador, 08/10/2026) ---
+# Unidad: la decisión (la copia y la sim no cuentan). Semana: de lunes a viernes por la sesión CME de la apertura; solo
+# cuentan las decisiones con sesión >= plan4.desde. Los textos de etiqueta son alias (*) de los de arriba.
+objetivos:
+  pestana: Objetivos semanales   # pestaña del histórico (semanas cerradas, la más reciente arriba)
+  semana:
+    dias: 5                      # lunes a viernes: el viernes es el lunes + (dias - 1)
+    bal: 'SEMANA {lunes:%d/%m}–{viernes:%d/%m}'    # columna Cuenta de la fila SEMANA del BAL
+    historico: '{lunes:%d/%m}–{viernes:%d/%m}'     # columna Semana de la pestaña
+  sin_preoperativa:              # 1) decisión con la estrategia por defecto (Sin estrategia) o con alguna de estas etiquetas
+    bal: '1) sin preop.'
+    columna: '1 Sin preoperativa'
+    maximo: 0                    # se cumple con <= N
+    estrategias: [*estrategia_por_defecto]
+    etiquetas: [*estrategia_tardia, *compuerta_sin_si]
+  reentrada_sobreoperacion:      # 2) número de estas etiquetas en las decisiones de la semana
+    bal: '2) reentr./sobreop.'
+    columna: '2 Reentrada / sobreoperación'
+    maximo: 0
+    etiquetas: [*reentrada, *reentrada_seguidas, *sobreoperacion_10, *sobreoperacion_1h]
+  sin_sl:                        # 3) número de estas etiquetas
+    bal: '3) sin SL'
+    columna: '3 Sin SL'
+    maximo: 0
+    etiquetas: [*sin_sl]
+  proceso_correcto:              # 4) decisiones con proceso correcto (Calificación) ÷ decisiones, en % entero (por defecto); sin decisiones no se evalúa
+    bal: '4) proceso ok'
+    columna: '4 % proceso correcto'
+    minimo_pct: 80               # se cumple con >= N %
+    valor: '{pct} %'
+  manual:                        # 5) la V4 no lo ve: columna manual del histórico, preservada por semana en SQLite
+    bal: '5) manual'
+    columna: '5 Compras fuera de cupo'
+    maximo: 0                    # un número escrito > N cuenta como incumplido; <= N como cumplido
+  columnas: {semana: Semana, decisiones: Decisiones, cumplidos: Cumplidos}
+  vista:
+    cumple: '✔'
+    incumple: '✘'
+    sin_dato: '—'                # objetivo 4 sin decisiones
+    celda: '{valor} {marca}'     # celdas 1 a 4 de la pestaña
+    parte_bal: '{etiqueta} {valor} {marca}'
+    decisiones: '{n} decisiones'
+    decision_una: '{n} decisión'
+    cumplidos: '{k}/{total}'
+    bal: '{decisiones} · {partes} · cumplidos {cumplidos}'
+    separador: ' · '
+
+# --- V5 (grill del 11/11/2026, Q1–Q47; spec §16). Rige para las decisiones con sesión CME de apertura >= `desde`; lo anterior
+# conserva las reglas de la V4. «Regla» es solo lo que impone Rithmic (tope diario de ganancia: +1.050 $ en pruebas y +119 $
+# en reales; Loss Limit como estaba): eso lo configura el operador en Rithmic y no está aquí. Lo de aquí son los «Consejos que
+# no pedí» (voluntarios) y las infracciones que marca el demonio.
+v5:
+  desde: 2026-11-11
+  banda_ticks: 20                # ganadora >= +N t, perdedora <= −N t, neutra entre medias (por contrato). Vale para rachas, Calificación y avisos
+  consejo_prefijo: 'CONSEJO IGNORADO: '      # infracción voluntaria: celda en naranja
+  sin_estrategia: &v5_sin_estrategia 'SIN ESTRATEGIA'    # infracción (rojo): la estrategia final de la decisión es la de defecto
+  horario:                       # FUERA DE HORARIO (rojo): apertura fuera de [desde, hasta), en la zona (15:30–18:00 de Madrid)
+    zona: America/New_York
+    desde: '09:30'
+    hasta: '12:00'
+    infraccion: &v5_fuera_horario 'FUERA DE HORARIO'
+    fin_turno: {hora: '11:55', texto: 'FIN DE TURNO INMINENTE'}    # aviso sin sonido, con el demonio abierto (17:55 de Madrid)
+  cuatro_ganadoras:              # al cerrar la N-ésima ganadora del día sin ninguna perdedora antes (las neutras no cuentan)
+    n: 4
+    aviso: '{n} GANADORAS SIN PERDER: NO OPERAR MÁS HOY'
+    infraccion: 'OPERAR TRAS 4 GANADORAS'
+    sonido: profit
+  perdedoras_seguidas:           # con la racha de perdedoras >= N (solo la rompe una ganadora); se repite con cada perdedora nueva. No es infracción
+    n: 3
+    aviso: '{n} PERDEDORAS SEGUIDAS: PARAR Y ANALIZAR EL MERCADO'
+    sonido: stoploss
+  ticks_perdidos:                # suma de los ticks de TODAS las decisiones cerradas en negativo del día >= límite (nunca el flotante)
+    limite: 407
+    aviso: '{ticks} T PERDIDOS HOY: FIN DE SESIÓN'
+    infraccion: 'OPERAR TRAS PERDER 407 T'
+    sonido: stoploss
+  ratio_planeado:                # columna Ratio B/R: el planeado por la estrategia
+    defecto: 1.5                 # +204 / −136 mientras no haya setups (grill pendiente)
+    estrategias: {}              # 'nombre de la estrategia': ratio
+  avisos:                        # notificación de Windows MUDA + wav de ATAS (Windows no deja poner un wav propio a la notificación)
+    titulo: ATAS V5
+    notificacion: true
+    max_antiguedad_s: 300        # eventos más viejos (arranque, reingesta) se registran sin avisar
+    veces: 2                     # cada sonido, N veces seguidas
+    carpeta: 'C:\Program Files (x86)\ATAS Platform\Sounds'
+    sonidos: {profit: profit.wav, stoploss: stoploss.wav}
+    infraccion: stoploss         # toda infracción (roja o naranja), al abrir la operación
+    infraccion_prefijo: 'INFRACCIÓN: '
+  colores:                       # fondo de la celda de Observaciones demonio; el texto, siempre negro
+    infraccion: '#ea9999'
+    consejo: '#f6b26b'
+    recordatorio: '#f6b26b'
+  recordatorio: 'SUEÑO ≥ 6 H  ·  PLAN LEÍDO HOY  ·  NI ENFERMO NI CON CONFLICTO PERSONAL ABIERTO'   # al arrancar cada turno, hasta su primera operación anotada
+  turno: {formato: 'T{n}', fantasma: 'turno fantasma'}
+  calificacion:                  # proceso correcto = estrategia elegida antes de entrar + ninguna infracción (roja o naranja)
+    infracciones: [*contratos_excedidos, *tras_objetivo, *v5_fuera_horario, *v5_sin_estrategia]
+  objetivos:                     # recuento semanal de la V5 (spec §16.8): tres objetivos, sin columna manual
+    sin_estrategia: {bal: '1) sin estrategia', columna: '1 Sin estrategia', maximo: 0}
+    infracciones: {bal: '2) infracciones', columna: '2 Infracciones', maximo: 0}       # las rojas; los consejos ignorados no cuentan
+    proceso_correcto: {bal: '3) proceso ok', columna: '3 % proceso correcto', minimo_pct: 80, valor: '{pct} %'}
+  unificado:                     # pestaña del histórico unificado (spec §16.9): una fila por decisión, lo nuevo arriba; el demonio solo añade
+    pestana: Histórico unificado
+    origen: {antiguo: 'histórico 16/03–21/09', v4: 'V4', v5: 'V5'}
