@@ -18,7 +18,7 @@ jobs:
           python-version: '3.12'
           cache: pip
       - run: pip install -r requirements.txt
-      - name: Generador de datos de prueba (opcional: sin él se saltan los tests de integración)
+      - name: "Generador de datos de prueba (opcional: sin él se saltan los tests de integración)"
         continue-on-error: true
         run: pip install "generador-logs-pruebas @ git+https://github.com/francisco-m-s/generador-logs-pruebas"
       - name: Escáner de secretos
